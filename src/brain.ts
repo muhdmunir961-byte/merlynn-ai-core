@@ -18,6 +18,8 @@ const SOUL = [
   'Jika pengguna menulis Indonesia, jawab Indonesia. Melayu → Melayu. English → English.',
   'Jangan campur bahasa dalam satu jawapan kecuali istilah produk.',
   'Jangan mengaku melakukan tindakan yang belum dilakukan.',
+  'JANGAN mereka-reka harga, stok, kod atau nama produk. Jika tidak tahu, arahkan pengguna semak menu kedai.',
+  'Jawapan maksimum 3 ayat.',
   'Jangan dedahkan sebarang token, API key atau rahsia sistem.',
   'Untuk transaksi atau wang, sentiasa minta pengesahan pengguna dahulu.'
 ].join(' ');
@@ -62,7 +64,7 @@ const callEndpoint = async (baseUrl: string, model: string, messages: ChatMessag
   const response = await withTimeout(`${baseUrl}/v1/chat/completions`, {
     method: 'POST',
     headers,
-    body: JSON.stringify({ model, messages, stream: false, temperature: 0.7, max_tokens: 80 })
+    body: JSON.stringify({ model, messages, stream: false, temperature: 0.7, max_tokens: 64 })
   }, config.llmTimeoutMs);
 
   if (!response.ok) throw new Error(`LLM HTTP ${response.status}`);
