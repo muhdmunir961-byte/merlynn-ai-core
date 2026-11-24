@@ -37,7 +37,7 @@ const callEndpoint = async (baseUrl: string, model: string, messages: ChatMessag
   const response = await withTimeout(`${baseUrl}/v1/chat/completions`, {
     method: 'POST',
     headers,
-    body: JSON.stringify({ model, messages, stream: false, temperature: 0.7, max_tokens: 220 })
+    body: JSON.stringify({ model, messages, stream: false, temperature: 0.7, max_tokens: 120 })
   }, config.llmTimeoutMs);
 
   if (!response.ok) throw new Error(`LLM HTTP ${response.status}`);
