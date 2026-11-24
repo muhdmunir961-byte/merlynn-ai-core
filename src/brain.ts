@@ -49,11 +49,18 @@ const callEndpoint = async (baseUrl: string, model: string, messages: ChatMessag
   return content.trim();
 };
 
-export const chat = async (input: { messages: ChatMessage[]; tier?: 'fast' | 'smart' }): Promise<ChatResult> => {
+export const chat = async (input: {
+  messages: ChatMessage[];
+  tier?: 'fast' | 'smart';
+  memory?: string;
+}): Promise<ChatResult> => {
   const started = Date.now();
   const tier = input.tier ?? 'fast';
   const model = tier === 'smart' && config.llmSmartModel ? config.llmSmartModel : config.llmFastModel;
-  const messages: ChatMessage[] = [{ role: 'system', content: SOUL }, ...input.messages.slice(-10)];
+  const system = input.memory
+    ? `${SOUL}\n\nIngatan tentang pengguna dan kedai:\n${input.memory}`
+    : SOUL;
+  const messages: ChatMessage[] = [{ role: 'system', content: system }, ...input.messages.slice(-10)];
 
   try {
     const content = await callEndpoint(config.llmBaseUrl, model, messages);

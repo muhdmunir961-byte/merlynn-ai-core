@@ -1,8 +1,11 @@
 import Fastify from 'fastify';
 import { config, llmConfigured } from './config.js';
 import { chat, type ChatMessage } from './brain.js';
+import { MemoryStore } from './memory.js';
 
 const app = Fastify({ logger: { level: config.logLevel } });
+const memory = new MemoryStore(process.env.MEMORY_FILE ?? './data/memory.json');
+await memory.load();
 
 const startedAt = Date.now();
 const stats = { requests: 0, llmCalls: 0, llmErrors: 0, lastLatencyMs: 0 };
@@ -119,8 +122,38 @@ app.get('/api/status', async () => ({
   llmConfigured: llmConfigured(),
   waGatewayConfigured: Boolean(config.waGatewayUrl),
   digiflazzConfigured: config.digiflazzConfigured,
+  memories: memory.list().length,
   stats
 }));
+
+app.get('/api/memory', async () => ({ records: memory.list() }));
+
+app.get('/api/memory/search', async (request) => {
+  const query = String((request.query as { q?: string } | undefined)?.q ?? '').trim();
+  if (!query) return { records: [] };
+  return { records: await memory.recall(query, 10) };
+});
+
+app.post('/api/memory', async (request, reply) => {
+  const body = request.body as { key?: unknown; value?: unknown; tags?: unknown } | undefined;
+  const key = typeof body?.key === 'string' ? body.key.trim() : '';
+  const value = typeof body?.value === 'string' ? body.value.trim() : '';
+  if (!key || !value) return reply.code(400).send({ error: 'key and value are required' });
+  const tags = Array.isArray(body?.tags) ? body.tags.filter((tag): tag is string => typeof tag === 'string') : [];
+  try {
+    const record = await memory.remember({ key, value, tags, source: 'owner' });
+    return { record };
+  } catch (error) {
+    return reply.code(400).send({ error: error instanceof Error ? error.message : 'failed' });
+  }
+});
+
+app.delete('/api/memory/:id', async (request, reply) => {
+  const id = String((request.params as { id?: string } | undefined)?.id ?? '');
+  if (!id) return reply.code(400).send({ error: 'id required' });
+  const removed = await memory.forget(id);
+  return removed ? { ok: true } : reply.code(404).send({ error: 'not found' });
+});
 
 app.post('/api/chat', async (request, reply) => {
   const body = request.body as { message?: unknown; tier?: unknown } | undefined;
@@ -133,7 +166,8 @@ app.post('/api/chat', async (request, reply) => {
   stats.requests += 1;
   stats.llmCalls += 1;
   try {
-    const result = await chat({ messages: [{ role: 'user', content: message }], tier });
+    const memoryContext = await memory.contextFor(message);
+    const result = await chat({ messages: [{ role: 'user', content: message }], tier, memory: memoryContext });
     stats.lastLatencyMs = result.latencyMs;
     return { reply: result.content, model: result.model, latencyMs: result.latencyMs };
   } catch (error) {
@@ -159,7 +193,8 @@ app.post('/api/wa/reply', async (request, reply) => {
     ? (body.history as ChatMessage[]).filter((item) => typeof item?.content === 'string').slice(-8)
     : [];
   try {
-    const result = await chat({ messages: [...history, { role: 'user', content: message }] });
+    const memoryContext = await memory.contextFor(message);
+    const result = await chat({ messages: [...history, { role: 'user', content: message }], memory: memoryContext });
     return { reply: result.content, model: result.model, jid: body?.jid ?? null };
   } catch (error) {
     return reply.code(502).send({ error: error instanceof Error ? error.message : 'LLM request failed' });
