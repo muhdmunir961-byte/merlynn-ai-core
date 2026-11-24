@@ -54,6 +54,15 @@ const dashboard = `<!doctype html>
     <button id="send">Hantar</button>
     <div id="out"></div>
   </div>
+  <div class="panel">
+    <div class="row"><strong>Memori</strong><span class="hint" id="memcount"></span></div>
+    <div id="memlist" style="margin-top:10px;display:grid;gap:6px;"></div>
+    <form id="memform" style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;">
+      <input id="memkey" placeholder="kunci (cth: nama owner)" style="flex:1 1 160px;" />
+      <input id="memval" placeholder="nilai (cth: Munn, suka ML 500)" style="flex:2 1 220px;" />
+      <button type="submit">Simpan</button>
+    </form>
+  </div>
 </div>
 <script>
 const cards = document.getElementById('cards');
@@ -104,6 +113,55 @@ send.addEventListener('click', async () => {
 
 refresh().catch(() => {});
 setInterval(() => refresh().catch(() => {}), 15000);
+
+const memList = document.getElementById('memlist');
+const memCount = document.getElementById('memcount');
+
+const loadMemory = async () => {
+  try {
+    const res = await fetch('/api/memory');
+    const data = await res.json();
+    const records = data.records || [];
+    memCount.textContent = records.length + ' rekod';
+    memList.innerHTML = records.length ? '' : '<div class="hint">Belum ada memori. Ajar Merlynn di bawah.</div>';
+    records.slice(0, 12).forEach((record) => {
+      const row = document.createElement('div');
+      row.style.cssText = 'display:flex;gap:8px;align-items:flex-start;border:1px solid #1f2733;border-radius:8px;padding:8px 10px;';
+      const text = document.createElement('div');
+      text.style.cssText = 'flex:1;font-size:13px;line-height:1.45;';
+      text.innerHTML = '<b>' + record.key + '</b><br><span style="color:#8b98a5">' + record.value + '</span>';
+      const del = document.createElement('button');
+      del.textContent = '×';
+      del.style.cssText = 'background:#1f2733;color:#e6edf3;padding:2px 8px;border-radius:6px;';
+      del.onclick = async () => {
+        await fetch('/api/memory/' + record.id, { method: 'DELETE' });
+        loadMemory();
+      };
+      row.append(text, del);
+      memList.append(row);
+    });
+  } catch (e) {
+    memCount.textContent = 'ralat';
+  }
+};
+
+document.getElementById('memform').addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const key = document.getElementById('memkey').value.trim();
+  const value = document.getElementById('memval').value.trim();
+  if (!key || !value) return;
+  await fetch('/api/memory', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ key, value })
+  });
+  document.getElementById('memkey').value = '';
+  document.getElementById('memval').value = '';
+  loadMemory();
+});
+
+loadMemory().catch(() => {});
+setInterval(() => loadMemory().catch(() => {}), 30000);
 </script>
 </body>
 </html>`;
