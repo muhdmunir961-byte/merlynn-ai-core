@@ -1,10 +1,20 @@
 import Fastify from 'fastify';
 import { config, llmConfigured } from './config.js';
-import { chat, type ChatMessage } from './brain.js';
+import { chat, detectLang, type ChatMessage } from './brain.js';
 import { MemoryStore } from './memory.js';
 
 const app = Fastify({ logger: { level: config.logLevel } });
 const memory = new MemoryStore(process.env.MEMORY_FILE ?? './data/memory.json');
+
+/** Optional language hint from the caller; falls back to auto-detection. */
+const asLang = (value: unknown): 'id' | 'en' | 'ms' | undefined => {
+  if (typeof value !== 'string') return undefined;
+  const clean = value.trim().toLowerCase();
+  if (clean === 'id' || clean === 'in' || clean === 'indonesia') return 'id';
+  if (clean === 'en' || clean === 'english') return 'en';
+  if (clean === 'ms' || clean === 'melayu') return 'ms';
+  return undefined;
+};
 await memory.load();
 
 const startedAt = Date.now();
@@ -214,18 +224,19 @@ app.delete('/api/memory/:id', async (request, reply) => {
 });
 
 app.post('/api/chat', async (request, reply) => {
-  const body = request.body as { message?: unknown; tier?: unknown } | undefined;
+  const body = request.body as { message?: unknown; tier?: unknown; lang?: unknown } | undefined;
   const message = typeof body?.message === 'string' ? body.message.trim() : '';
   if (!message) return reply.code(400).send({ error: 'message is required' });
   if (!llmConfigured()) {
     return reply.code(503).send({ error: 'LLM is not configured. Set LLM_BASE_URL and LLM_FAST_MODEL.' });
   }
   const tier = body?.tier === 'smart' ? 'smart' : 'fast';
+  const lang = asLang(body?.lang);
   stats.requests += 1;
   stats.llmCalls += 1;
   try {
     const memoryContext = await memory.contextFor(message);
-    const result = await chat({ messages: [{ role: 'user', content: message }], tier, memory: memoryContext });
+    const result = await chat({ messages: [{ role: 'user', content: message }], tier, memory: memoryContext, lang });
     stats.lastLatencyMs = result.latencyMs;
     return { reply: result.content, model: result.model, latencyMs: result.latencyMs };
   } catch (error) {
@@ -243,16 +254,17 @@ app.post('/api/wa/reply', async (request, reply) => {
       return reply.code(401).send({ error: 'unauthorized' });
     }
   }
-  const body = request.body as { jid?: unknown; message?: unknown; history?: unknown } | undefined;
+  const body = request.body as { jid?: unknown; message?: unknown; history?: unknown; lang?: unknown } | undefined;
   const message = typeof body?.message === 'string' ? body.message.trim() : '';
   if (!message) return reply.code(400).send({ error: 'message is required' });
   if (!llmConfigured()) return reply.code(503).send({ error: 'LLM is not configured' });
+  const lang = asLang(body?.lang);
   const history = Array.isArray(body?.history)
     ? (body.history as ChatMessage[]).filter((item) => typeof item?.content === 'string').slice(-8)
     : [];
   try {
     const memoryContext = await memory.contextFor(message);
-    const result = await chat({ messages: [...history, { role: 'user', content: message }], memory: memoryContext });
+    const result = await chat({ messages: [...history, { role: 'user', content: message }], memory: memoryContext, lang });
     return { reply: result.content, model: result.model, jid: body?.jid ?? null };
   } catch (error) {
     return reply.code(502).send({ error: error instanceof Error ? error.message : 'LLM request failed' });
